@@ -30,6 +30,9 @@ export const MODEL_LIMITS = {
   'gemini-1.5-flash': 256000,
   'gemini-flash': 256000,
   'gemini-pro': 256000,
+  'gemini-4-carbon': 256000,
+  'gemini-4-hydrogen': 256000,
+  'gemini-4-argon': 256000,
   'flash': 256000,
   'pro': 256000,
   'flash_lite': 256000,
@@ -114,7 +117,7 @@ let lastNativeScanMs = 0;
 let isNativeScanning = false;
 
 // OpenRouter real-time API pricing rates ($ per 1M tokens)
-// Configured for active Antigravity models: Gemini 3.8 Flash, Gemini 4 Argon,
+// Configured for active Antigravity models: Gemini 3.8 Flash, Gemini 4 Argon, Gemini 4 Carbon, Gemini 4 Hydrogen,
 // Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B, Claude Sonnet 5.5, Claude Opus 5.5
 export const DEFAULT_MODEL_PRICING = {
   // 1. Gemini 3.8 Flash series (OpenRouter google/gemini-3.8-flash)
@@ -128,33 +131,44 @@ export const DEFAULT_MODEL_PRICING = {
   // 2. Gemini 4 Argon series (OpenRouter google/gemini-4-argon)
   'gemini-4-argon': { input: 2.00, output: 10.00, cached: 0.10 },
   'gemini 4 argon': { input: 2.00, output: 10.00, cached: 0.10 },
+  'google/gemini-4-argon': { input: 2.00, output: 10.00, cached: 0.10 },
 
-  // 3. Claude Sonnet 4.6 series (OpenRouter anthropic/claude-sonnet-4.6)
+  // 3. Gemini 4 Carbon series (OpenRouter google/gemini-4-carbon)
+  'gemini-4-carbon': { input: 2.00, output: 10.00, cached: 0.10 },
+  'gemini 4 carbon': { input: 2.00, output: 10.00, cached: 0.10 },
+  'google/gemini-4-carbon': { input: 2.00, output: 10.00, cached: 0.10 },
+
+  // 4. Gemini 4 Hydrogen series (OpenRouter google/gemini-4-hydrogen)
+  'gemini-4-hydrogen': { input: 1.50, output: 7.50, cached: 0.075 },
+  'gemini 4 hydrogen': { input: 1.50, output: 7.50, cached: 0.075 },
+  'google/gemini-4-hydrogen': { input: 1.50, output: 7.50, cached: 0.075 },
+
+  // 5. Claude Sonnet 4.6 series (OpenRouter anthropic/claude-sonnet-4.6)
   'claude-sonnet-4.6': { input: 3.00, output: 15.00, cached: 0.30 },
   'claude-sonnet-4-6': { input: 3.00, output: 15.00, cached: 0.30 },
   'claude sonnet 4.6': { input: 3.00, output: 15.00, cached: 0.30 },
   'claude sonnet 4.6 (thinking)': { input: 3.00, output: 15.00, cached: 0.30 },
 
-  // 4. Claude Opus 4.6 series (OpenRouter anthropic/claude-opus-4.6)
+  // 6. Claude Opus 4.6 series (OpenRouter anthropic/claude-opus-4.6)
   'claude-opus-4.6': { input: 5.00, output: 25.00, cached: 0.50 },
   'claude-opus-4-6': { input: 5.00, output: 25.00, cached: 0.50 },
   'claude opus 4.6': { input: 5.00, output: 25.00, cached: 0.50 },
   'claude opus 4.6 (thinking)': { input: 5.00, output: 25.00, cached: 0.50 },
 
-  // 5. GPT-OSS 120B series (OpenRouter openai/gpt-oss-120b)
+  // 7. GPT-OSS 120B series (OpenRouter openai/gpt-oss-120b)
   'gpt-oss-120b': { input: 0.028, output: 0.104, cached: 0.025 },
   'gpt-oss 120b': { input: 0.028, output: 0.104, cached: 0.025 },
   'gpt-oss 120b (medium)': { input: 0.028, output: 0.104, cached: 0.025 },
   'openai/gpt-oss-120b': { input: 0.028, output: 0.104, cached: 0.025 },
 
-  // 6. Claude Sonnet 5.5 series (OpenRouter anthropic/claude-sonnet-5.5)
+  // 8. Claude Sonnet 5.5 series (OpenRouter anthropic/claude-sonnet-5.5)
   'claude-sonnet-5.5': { input: 2.00, output: 10.00, cached: 0.10 },
   'claude-sonnet-5-5': { input: 2.00, output: 10.00, cached: 0.10 },
   'claude sonnet 5.5': { input: 2.00, output: 10.00, cached: 0.10 },
   'claude-sonnet-5-5-high': { input: 2.00, output: 10.00, cached: 0.10 },
   'claude sonnet 5.5 (high)': { input: 2.00, output: 10.00, cached: 0.10 },
 
-  // 7. Claude Opus 5.5 series (OpenRouter anthropic/claude-opus-5.5)
+  // 9. Claude Opus 5.5 series (OpenRouter anthropic/claude-opus-5.5)
   'claude-opus-5.5': { input: 4.00, output: 20.00, cached: 0.20 },
   'claude-opus-5-5': { input: 4.00, output: 20.00, cached: 0.20 },
   'claude opus 5.5': { input: 4.00, output: 20.00, cached: 0.20 },
@@ -211,6 +225,12 @@ export function getModelPricing(modelName) {
   }
   if (lower.includes('gpt-oss') && lower.includes('120b')) {
     return { input: 0.028, output: 0.104, cached: 0.025 };
+  }
+  if (lower.includes('carbon')) {
+    return { input: 2.00, output: 10.00, cached: 0.10 };
+  }
+  if (lower.includes('hydrogen')) {
+    return { input: 1.50, output: 7.50, cached: 0.075 };
   }
   if (lower.includes('argon')) {
     return { input: 2.00, output: 10.00, cached: 0.10 };

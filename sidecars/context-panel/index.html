@@ -31,8 +31,8 @@
       --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(255, 255, 255, 0.075), 0 3px 10px -2px rgba(0, 0, 0, 0.28), 0 1px 3px rgba(0, 0, 0, 0.22);
       --bar-sys: #383842;
       --bar-tool: #585866;
-      --bar-user: #888899;
-      --bar-model: #C0C0CC;
+      --bar-user: #787888;
+      --bar-model: #9494a4;
       --pie-unfilled: #24242C;
       --pie-green: #4ade80;
       --pie-warn: #fbbf24;
@@ -59,9 +59,9 @@
         --onyx-selected: #FFFFFF;
         --card-shadow: inset 0 1px 0 #FFFFFF, 0 0 0 1px rgba(10, 10, 12, 0.06), 0 2px 6px -1px rgba(10, 10, 12, 0.03), 0 1px 2px rgba(10, 10, 12, 0.02);
         --bar-sys: #18181b;
-        --bar-tool: #52525b;
-        --bar-user: #71717a;
-        --bar-model: #d4d4d8;
+        --bar-tool: #4b4b54;
+        --bar-user: #666672;
+        --bar-model: #7e7e8c;
         --pie-unfilled: #E4E4E7;
         --pie-green: #2d6a4f;
         --pie-warn: #d97706;
@@ -186,7 +186,31 @@
     }
 
     .token-bar-segment {
-      transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+      position: relative;
+      transition: width 0.3s cubic-bezier(0.22, 1, 0.36, 1),
+                  transform 0.15s ease,
+                  filter 0.15s ease,
+                  opacity 0.15s ease;
+      transform-origin: center;
+      cursor: pointer;
+    }
+
+    #session-bar-fill:hover .token-bar-segment {
+      opacity: 0.6;
+    }
+
+    #session-bar-fill .token-bar-segment:hover {
+      opacity: 1 !important;
+      transform: scaleY(1.3);
+      z-index: 10;
+      border-radius: 2px;
+      filter: brightness(1.12);
+    }
+
+    @media (prefers-color-scheme: light) {
+      #session-bar-fill .token-bar-segment:hover {
+        filter: brightness(0.86) contrast(1.08);
+      }
     }
   </style>
   <script>
@@ -221,7 +245,7 @@
         <div class="w-6 h-6 rounded-md border border-[var(--border)] bg-[var(--onyx-key)] shadow-[var(--onyx-key-shadow)] flex items-center justify-center flex-shrink-0 overflow-hidden" title="agy-context by q1u">
           <img src="/logo.svg" alt="q1u logo" class="w-4 h-4 object-contain" />
         </div>
-        <h1 id="top-title" class="text-xs sm:text-sm font-semibold tracking-tight text-[var(--foreground)]">当前会话深度上下文</h1>
+        <h1 id="top-title" class="text-xs sm:text-sm font-semibold tracking-tight text-[var(--foreground)]">会话上下文</h1>
       </div>
 
       <div class="flex items-center space-x-2">
@@ -243,10 +267,10 @@
     <!-- Top View Tabs (Swapped Order: Session Context first, Global Tokens second) -->
     <div class="flex border-b border-[var(--border)] text-xs gap-1">
       <button onclick="switchMainView('session')" id="btn-view-session" class="main-tab-btn active px-3.5 py-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition">
-        当前会话深度上下文 (单会话)
+        会话上下文
       </button>
       <button onclick="switchMainView('global')" id="btn-view-global" class="main-tab-btn px-3.5 py-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition">
-        本地 Token 用量 (全局)
+        本地全局用量
       </button>
     </div>
 
@@ -278,11 +302,16 @@
         </div>
 
         <!-- Segmented Stacked Progress Bar (Native Monochrome) -->
-        <div class="w-full h-2 rounded bg-[var(--card-subtle)] overflow-hidden flex border border-[var(--border)]">
-          <div id="session-bar-sys" class="token-bar-segment" style="width: 0%; background-color: var(--bar-sys);" title="System & Rules"></div>
-          <div id="session-bar-tool" class="token-bar-segment" style="width: 0%; background-color: var(--bar-tool);" title="Tool I/O"></div>
-          <div id="session-bar-user" class="token-bar-segment" style="width: 0%; background-color: var(--bar-user);" title="User Input"></div>
-          <div id="session-bar-model" class="token-bar-segment" style="width: 0%; background-color: var(--bar-model);" title="Model History"></div>
+        <div id="session-bar-container" class="relative w-full h-4 flex items-center cursor-pointer select-none" title="当前会话窗口占用">
+          <!-- Track Base -->
+          <div class="absolute inset-x-0 h-2 rounded bg-[var(--card-subtle)] border border-[var(--border)] overflow-hidden pointer-events-none"></div>
+          <!-- Filled Segment Container (overflow-visible for hover scaling) -->
+          <div id="session-bar-fill" class="relative h-2 flex items-center transition-all duration-300" style="width: 0%;">
+            <div id="session-bar-sys" class="token-bar-segment shrink-0 h-full rounded-l" style="width: 0%; background-color: var(--bar-sys);" title="System & Rules"></div>
+            <div id="session-bar-tool" class="token-bar-segment shrink-0 h-full" style="width: 0%; background-color: var(--bar-tool);" title="Tool I/O"></div>
+            <div id="session-bar-user" class="token-bar-segment shrink-0 h-full" style="width: 0%; background-color: var(--bar-user);" title="User Input"></div>
+            <div id="session-bar-model" class="token-bar-segment shrink-0 h-full rounded-r" style="width: 0%; background-color: var(--bar-model);" title="Model History"></div>
+          </div>
         </div>
 
         <!-- Session Quick Grid (Floating Sub-cards) -->
@@ -424,8 +453,7 @@
             </div>
           </div>
 
-          <div class="flex flex-wrap items-center justify-between text-[11px] text-[var(--muted-foreground)] px-1 gap-2">
-            <span>💡 提示：在曲线上移动鼠标可查看每轮详细 Token 构成与增量</span>
+          <div class="flex items-center justify-end text-[11px] text-[var(--muted-foreground)] px-1">
             <span class="font-mono">纵轴：Tokens (单位 K/M) | 横轴：交互轮次</span>
           </div>
         </div>
@@ -530,17 +558,10 @@
       <!-- ========================================== -->
       <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm space-y-3.5">
         <div class="flex flex-wrap items-start justify-between gap-3 pb-2.5 border-b border-[var(--border)]">
-          <!-- Left title & icon -->
-          <div class="flex items-center space-x-2">
-            <span class="w-5 h-5 rounded border border-[var(--border)] bg-[var(--card-subtle)] flex items-center justify-center text-[var(--foreground)]">
-              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M3 13l4-4 4 4 6-8 4 4" />
-              </svg>
-            </span>
-            <div>
-              <div id="chart-range-title" class="text-xs sm:text-sm font-bold text-[var(--foreground)]">今天</div>
-              <div class="text-[10px] text-[var(--muted-foreground)]">本地生成记录汇总</div>
-            </div>
+          <!-- Left title -->
+          <div>
+            <div id="chart-range-title" class="text-xs sm:text-sm font-bold text-[var(--foreground)]">今天</div>
+            <div class="text-[10px] text-[var(--muted-foreground)]">本地生成记录汇总</div>
           </div>
 
           <!-- Right interactive stats card (Monochrome styling) -->
@@ -579,17 +600,9 @@
       <!-- ========================================== -->
       <div class="bg-[var(--card)] border border-[var(--border)] rounded-xl p-4 shadow-sm space-y-3.5">
         <div class="flex items-center justify-between pb-2.5 border-b border-[var(--border)]">
-          <div class="flex items-center space-x-2">
-            <span class="w-5 h-5 rounded border border-[var(--border)] bg-[var(--card-subtle)] flex items-center justify-center text-[var(--foreground)]">
-              <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="9"/>
-                <path d="M12 3v9h9"/>
-              </svg>
-            </span>
-            <div>
-              <div class="text-xs sm:text-sm font-bold text-[var(--foreground)]">模型分布</div>
-              <div id="model-view-subtitle" class="text-[10px] text-[var(--muted-foreground)]">今天本地记录</div>
-            </div>
+          <div>
+            <div class="text-xs sm:text-sm font-bold text-[var(--foreground)]">模型分布</div>
+            <div id="model-view-subtitle" class="text-[10px] text-[var(--muted-foreground)]">今天本地记录</div>
           </div>
 
           <!-- Switch Pills: Token 用量 vs 预估费用 -->
@@ -597,12 +610,8 @@
             <button id="btn-model-tokens" onclick="switchModelDistributionTab('tokens')" class="px-2.5 py-0.5 rounded-md font-medium bg-[var(--onyx-key)] text-[var(--foreground)] shadow-[var(--onyx-key-shadow)] transition">
               Token 用量
             </button>
-            <button id="btn-model-cost" onclick="switchModelDistributionTab('cost')" class="px-2.5 py-0.5 rounded-md font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition flex items-center gap-1">
-              <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="9"/>
-                <path d="M12 3v9h9"/>
-              </svg>
-              <span>预估费用</span>
+            <button id="btn-model-cost" onclick="switchModelDistributionTab('cost')" class="px-2.5 py-0.5 rounded-md font-medium text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition">
+              预估费用
             </button>
           </div>
         </div>
@@ -681,10 +690,10 @@
       
       const topTitle = document.getElementById('top-title');
       if (view === 'session') {
-        if (topTitle) topTitle.textContent = '当前会话深度上下文';
+        if (topTitle) topTitle.textContent = '会话上下文';
         fetchSessionContext();
       } else {
-        if (topTitle) topTitle.textContent = '本地 Token 用量 (全局)';
+        if (topTitle) topTitle.textContent = '本地全局用量';
         fetchGlobalTokens();
       }
     }
@@ -1051,29 +1060,78 @@
       document.getElementById('session-turns').textContent = `${ov.totalModelTurns} 轮模型交互`;
       document.getElementById('session-remaining').textContent = ov.remainingTokens.toLocaleString();
 
+      const barContainer = document.getElementById('session-bar-container');
+      const barFill = document.getElementById('session-bar-fill');
       const barSys = document.getElementById('session-bar-sys');
       const barTool = document.getElementById('session-bar-tool');
       const barUser = document.getElementById('session-bar-user');
       const barModel = document.getElementById('session-bar-model');
 
+      const usagePct = Math.min(100, Math.max(0, Number(ov.usagePercent) || 0));
+      if (barFill) {
+        const fillW = (ov.currentTotalContext > 0 && usagePct < 0.5) ? 0.5 : usagePct;
+        barFill.style.width = `${fillW}%`;
+      }
+      if (barContainer) {
+        barContainer.title = `当前会话窗口占用: ${(ov.currentTotalContext || 0).toLocaleString()} / ${(ov.modelLimit || 0).toLocaleString()} tokens (${usagePct}%)`;
+      }
+
       if (data.breakdown && data.breakdown.length === 3) {
         // Official 3D Groups: System Prompt, Tools, Chat Messages
-        const sysPct = data.breakdown[0]?.percent || 0;
-        const toolPct = data.breakdown[1]?.percent || 0;
-        const chatPct = data.breakdown[2]?.percent || 0;
-        if (barSys) { barSys.style.width = `${sysPct}%`; barSys.style.display = 'block'; barSys.title = `${data.breakdown[0].label}: ${sysPct}%`; }
-        if (barTool) { barTool.style.width = `${toolPct}%`; barTool.style.display = 'block'; barTool.title = `${data.breakdown[1].label}: ${toolPct}%`; }
-        if (barUser) { barUser.style.width = '0%'; barUser.style.display = 'none'; }
-        if (barModel) { barModel.style.width = `${chatPct}%`; barModel.style.display = 'block'; barModel.title = `${data.breakdown[2].label}: ${chatPct}%`; }
+        const sys = data.breakdown[0] || {};
+        const tool = data.breakdown[1] || {};
+        const chat = data.breakdown[2] || {};
+        const sysPct = sys.percent || 0;
+        const toolPct = tool.percent || 0;
+        const chatPct = chat.percent || 0;
+        if (barSys) {
+          barSys.style.width = `${sysPct}%`;
+          barSys.style.display = sysPct > 0 ? 'block' : 'none';
+          barSys.title = `${sys.label || 'System Prompt'}: ${(sys.tokens || 0).toLocaleString()} tokens (${sysPct}% 占已用)`;
+        }
+        if (barTool) {
+          barTool.style.width = `${toolPct}%`;
+          barTool.style.display = toolPct > 0 ? 'block' : 'none';
+          barTool.title = `${tool.label || 'Tools'}: ${(tool.tokens || 0).toLocaleString()} tokens (${toolPct}% 占已用)`;
+        }
+        if (barUser) {
+          barUser.style.width = '0%';
+          barUser.style.display = 'none';
+        }
+        if (barModel) {
+          barModel.style.width = `${chatPct}%`;
+          barModel.style.display = chatPct > 0 ? 'block' : 'none';
+          barModel.title = `${chat.label || 'Chat Messages'}: ${(chat.tokens || 0).toLocaleString()} tokens (${chatPct}% 占已用)`;
+        }
       } else if (data.breakdown) {
-        const sysPct = data.breakdown[0]?.percent || 0;
-        const toolPct = data.breakdown[1]?.percent || 0;
-        const userPct = data.breakdown[2]?.percent || 0;
-        const modelPct = data.breakdown[3]?.percent || 0;
-        if (barSys) { barSys.style.width = `${sysPct}%`; barSys.style.display = 'block'; barSys.title = `${data.breakdown[0].label}: ${sysPct}%`; }
-        if (barTool) { barTool.style.width = `${toolPct}%`; barTool.style.display = 'block'; barTool.title = `${data.breakdown[1].label}: ${toolPct}%`; }
-        if (barUser) { barUser.style.width = `${userPct}%`; barUser.style.display = 'block'; barUser.title = `${data.breakdown[2].label}: ${userPct}%`; }
-        if (barModel) { barModel.style.width = `${modelPct}%`; barModel.style.display = 'block'; barModel.title = `${data.breakdown[3].label}: ${modelPct}%`; }
+        const sys = data.breakdown[0] || {};
+        const tool = data.breakdown[1] || {};
+        const user = data.breakdown[2] || {};
+        const model = data.breakdown[3] || {};
+        const sysPct = sys.percent || 0;
+        const toolPct = tool.percent || 0;
+        const userPct = user.percent || 0;
+        const modelPct = model.percent || 0;
+        if (barSys) {
+          barSys.style.width = `${sysPct}%`;
+          barSys.style.display = sysPct > 0 ? 'block' : 'none';
+          barSys.title = `${sys.label || 'System'}: ${(sys.tokens || 0).toLocaleString()} tokens (${sysPct}% 占已用)`;
+        }
+        if (barTool) {
+          barTool.style.width = `${toolPct}%`;
+          barTool.style.display = toolPct > 0 ? 'block' : 'none';
+          barTool.title = `${tool.label || 'Tools'}: ${(tool.tokens || 0).toLocaleString()} tokens (${toolPct}% 占已用)`;
+        }
+        if (barUser) {
+          barUser.style.width = `${userPct}%`;
+          barUser.style.display = userPct > 0 ? 'block' : 'none';
+          barUser.title = `${user.label || 'User'}: ${(user.tokens || 0).toLocaleString()} tokens (${userPct}% 占已用)`;
+        }
+        if (barModel) {
+          barModel.style.width = `${modelPct}%`;
+          barModel.style.display = modelPct > 0 ? 'block' : 'none';
+          barModel.title = `${model.label || 'Model'}: ${(model.tokens || 0).toLocaleString()} tokens (${modelPct}% 占已用)`;
+        }
       }
 
       // Breakdown list

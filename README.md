@@ -9,7 +9,7 @@
 
 高性能本地 Token 用量与上下文深度监控插件，专为 **Google Antigravity** 平台量身打造。
 
-原生嵌入 Antigravity 右侧辅助侧边栏（Auxiliary Pane），基于后台静默 Sidecar 守护进程常驻运行，提供当前会话深度上下文诊断、本地全局用量大盘分析以及在线一键无感升级。
+原生嵌入 Antigravity 右侧辅助侧边栏（Auxiliary Pane），基于后台静默 Sidecar 守护进程常驻运行，提供会话上下文诊断、本地全局用量大盘分析以及在线一键无感升级。
 
 ---
 
@@ -21,19 +21,19 @@
 ##  界面实机预览 (Screenshots)
 
 <p align="center">
-  <img src="assets/preview.jpg" alt="当前会话深度上下文 (单会话视图与增长曲线)" width="48%">
+  <img src="assets/preview.jpg" alt="会话上下文 (单会话视图与增长曲线)" width="48%">
   <img src="assets/preview-modal.jpg" alt="版本更新在线检查与一键无感热升级" width="48%">
 </p>
 
 <p align="center">
-  <em>左图：当前会话深度上下文（窗口占用、Prompt 缓存率、演进轨迹曲线） | 右图：在线检查更新与一键无感升级弹窗</em>
+  <em>左图：会话上下文（窗口占用、Prompt 缓存率、演进轨迹曲线） | 右图：在线检查更新与一键无感升级弹窗</em>
 </p>
 
 ---
 
 ##  核心特性 (Key Features)
 
-### 1. 当前会话深度上下文 (单会话视图 - 默认主界面)
+### 1. 会话上下文 (单会话视图 - 默认主界面)
 * **会话窗口实时占用 (Context Window Gauge)**：
   - 动态显示当前已占用 Tokens、模型上限阈值与实时占比百分比。
   - 健康状态动态评估（良好 / 警告 >60% / 危险 >80%），并在超载时主动推荐 `/compact` 剪枝策略。
@@ -45,7 +45,7 @@
   - **演进轨迹 (Token Velocity)**：SVG 平滑曲线绘制上下文随交互轮次的增长斜率，直观呈现每轮交互的增量冲击，支持悬停十字游标查阅详情。
   - **诊断建议**：根据缓存命中率与工具消耗占比，提供个性化上下文优化指引。
 
-### 2. 本地 Token 用量大盘 (全局视图)
+### 2. 本地全局用量大盘 (全局视图)
 * **多范围灵活筛选**：
   - 支持 **今天 / 昨天 / 近 3 天 / 近 7 天 / 近 30 天** 随心切换。
 * **8 项核心指标矩阵**：
@@ -58,7 +58,7 @@
 * **多模型份额分布图表与明细**：
   - **Token 用量视图**：按各模型在总消耗中的实际占比等比例呈现进度条。
   - **预估费用视图**：单色 SVG 环形 Donut 图与模型费用占比清单。
-  - **最新主流模型覆盖**：同步 OpenRouter 实时费率（Gemini 3.8 Flash, Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B, Gemini 4 Argon, Claude Sonnet 5.5, Claude Opus 5.5 等），支持用户自定义配置覆盖。
+  - **最新主流模型覆盖**：同步 OpenRouter 实时费率（Gemini 3.8 Flash, Gemini 4 Carbon, Gemini 4 Hydrogen, Gemini 4 Argon, Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B, Claude Sonnet 5.5, Claude Opus 5.5 等），支持用户自定义配置覆盖。
 
 ### 3. 原生 Antigravity 工业美学设计
 * **象牙白与黑灰极简调色板**：适配 Antigravity 原生象牙白 (`#faf9f5`) 与深色曜石黑 (`#0f0f11`)，拒绝杂乱颜色与表情符号。

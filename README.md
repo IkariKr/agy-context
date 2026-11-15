@@ -58,7 +58,7 @@
 * **多模型份额分布图表与明细**：
   - **Token 用量视图**：按各模型在总消耗中的实际占比等比例呈现进度条。
   - **预估费用视图**：单色 SVG 环形 Donut 图与模型费用占比清单。
-  - **最新主流模型覆盖**：同步 OpenRouter 实时费率（Gemini 3.8 Flash, Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B, Gemini 4 Argon, Claude Sonnet 5.5, Claude Opus 5.5 等），支持用户自定义配置覆盖。
+  - **最新主流模型覆盖**：同步 OpenRouter 实时费率（Gemini 3.8 Flash, Gemini 4 Carbon, Gemini 4 Hydrogen, Gemini 4 Argon, Claude Sonnet 4.6, Claude Opus 4.6, GPT-OSS 120B, Claude Sonnet 5.5, Claude Opus 5.5 等），支持用户自定义配置覆盖。
 
 ### 3. 原生 Antigravity 工业美学设计
 * **象牙白与黑灰极简调色板**：适配 Antigravity 原生象牙白 (`#faf9f5`) 与深色曜石黑 (`#0f0f11`)，拒绝杂乱颜色与表情符号。

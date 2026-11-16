@@ -245,7 +245,7 @@
         <div class="w-6 h-6 rounded-md border border-[var(--border)] bg-[var(--onyx-key)] shadow-[var(--onyx-key-shadow)] flex items-center justify-center flex-shrink-0 overflow-hidden" title="agy-context by q1u">
           <img src="/logo.svg" alt="q1u logo" class="w-4 h-4 object-contain" />
         </div>
-        <h1 id="top-title" class="text-xs sm:text-sm font-semibold tracking-tight text-[var(--foreground)]">会话上下文</h1>
+        <h1 id="top-title" class="text-xs sm:text-sm font-semibold tracking-tight text-[var(--foreground)] font-mono">q1uuuu/agy-context</h1>
       </div>
 
       <div class="flex items-center space-x-2">
@@ -295,10 +295,14 @@
             </div>
           </div>
 
-          <div class="flex items-center gap-1.5 px-2.5 py-1 rounded border border-[var(--border)] bg-[var(--card-subtle)] text-[var(--muted-foreground)]">
-            <span class="w-1.5 h-1.5 rounded-full bg-[var(--foreground)]"></span>
-            <span id="session-health-label" class="text-xs font-medium">良好 (Healthy)</span>
-          </div>
+          <!-- Context Unlock Status Capsule (Native Antigravity Onyx Key) -->
+          <button id="unlock-badge-btn" onclick="openUnlockModal()" class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[var(--border)] bg-[var(--onyx-key)] hover:bg-[var(--card-hover)] hover:border-[var(--muted-foreground)]/40 text-[var(--foreground)] text-xs font-medium shadow-[var(--onyx-key-shadow)] transition select-none active:scale-95 group cursor-pointer" title="点击查看与管理底层上下文门禁">
+            <svg id="unlock-svg-icon" class="w-3.5 h-3.5 text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path id="unlock-svg-path" stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 118 0v4h8z" />
+            </svg>
+            <span id="unlock-badge-label" class="text-xs font-medium text-[var(--foreground)] tracking-tight">已解锁</span>
+            <span id="unlock-badge-tag" class="px-1.5 py-0.2 rounded text-[10px] font-mono bg-[var(--card-subtle)] text-[var(--muted-foreground)] border border-[var(--border)] font-normal">512K</span>
+          </button>
         </div>
 
         <!-- Segmented Stacked Progress Bar (Native Monochrome) -->
@@ -337,7 +341,7 @@
           <div class="bg-[var(--card-subtle)] p-2.5 rounded-lg border border-[var(--border)]">
             <div class="text-[10px] text-[var(--muted-foreground)]">剩余可用空间</div>
             <div id="session-remaining" class="text-sm sm:text-base font-bold font-mono text-[var(--foreground)] mt-0.5">--</div>
-            <div class="text-[10px] text-[var(--muted-foreground)] mt-0.5">至模型上限</div>
+            <div id="session-remaining-sub" class="text-[10px] text-[var(--muted-foreground)] mt-0.5">至模型上限</div>
           </div>
         </div>
       </div>
@@ -688,12 +692,9 @@
       document.getElementById('btn-view-session').classList.toggle('active', view === 'session');
       document.getElementById('btn-view-global').classList.toggle('active', view === 'global');
       
-      const topTitle = document.getElementById('top-title');
       if (view === 'session') {
-        if (topTitle) topTitle.textContent = '会话上下文';
         fetchSessionContext();
       } else {
-        if (topTitle) topTitle.textContent = '本地全局用量';
         fetchGlobalTokens();
       }
     }
@@ -1026,19 +1027,86 @@
       }
     }
 
-    function renderSessionView(data) {
-      const ov = data.overview;
-      const meta = data.meta;
+    const PRESET_LIMIT_MAP = {
+      '900k': 900000,
+      '512k': 512000,
+      '256k': 256000
+    };
+    // 默认初始状态必须是 'dynamic'（跟随实际动态）
+    let currentSelectedPreset = localStorage.getItem('agy_context_preset') || 'dynamic';
+    if (!['dynamic', '900k', '512k', '256k'].includes(currentSelectedPreset)) {
+      currentSelectedPreset = 'dynamic';
+    }
 
-      document.getElementById('session-current-tokens').textContent = ov.currentTotalContext.toLocaleString();
-      document.getElementById('session-max-tokens').textContent = meta.modelLimit.toLocaleString();
-      
-      const pctVal = Math.min(100, Math.max(0, ov.usagePercent || 0));
+    function onContextPresetChange(val) {
+      currentSelectedPreset = val;
+      localStorage.setItem('agy_context_preset', val);
+      renderSessionOverviewWithPreset();
+      const fetchFn = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch : fetch;
+      fetchFn('/api/context/preset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preset: val })
+      }).catch(() => {});
+    }
+
+    async function onModalPresetChange(val) {
+      localStorage.setItem('agy_context_preset', val);
+      if (cachedUnlockStatus) {
+        cachedUnlockStatus.activePreset = val;
+      }
+      if (sessionDataCache && sessionDataCache.overview) {
+        sessionDataCache.overview.activePreset = val;
+        if (PRESET_LIMIT_MAP[val]) {
+          sessionDataCache.overview.targetLimit = PRESET_LIMIT_MAP[val];
+        }
+      }
+      const fetchFn = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch : fetch;
+      fetchFn('/api/context/preset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preset: val })
+      }).catch(() => {});
+      renderUnlockBadge(cachedUnlockStatus || { desktop: { isUnlocked: true } });
+      renderSessionOverviewWithPreset();
+    }
+
+    function renderSessionOverviewWithPreset() {
+      if (!sessionDataCache) return;
+      const data = sessionDataCache;
+      const ov = data.overview || {};
+      const meta = data.meta || {};
+
+      // 真实探测到的实际物理上限 (如 983,040 或未解锁的 256,000)
+      const telemetryLimit = ov.modelLimit || meta.modelLimit || 256000;
+
+      // 读取当前生效的预设档位 (512k, 900k, 256k, dynamic)
+      const activePreset = (cachedUnlockStatus && cachedUnlockStatus.activePreset) || ov.activePreset || localStorage.getItem('agy_context_preset') || 'dynamic';
+
+      // 预算基准：如果用户指定了具体档位，分母与百分比以设定的目标预算为准；若是 dynamic 则按全量物理上限
+      let effectiveLimit = telemetryLimit;
+      if (activePreset in PRESET_LIMIT_MAP) {
+        effectiveLimit = PRESET_LIMIT_MAP[activePreset];
+      }
+
+      const currentTokens = ov.currentTotalContext || 0;
+      document.getElementById('session-current-tokens').textContent = currentTokens.toLocaleString();
+      document.getElementById('session-max-tokens').textContent = effectiveLimit.toLocaleString();
+      document.getElementById('session-max-tokens').title = `当前预算上限: ${effectiveLimit.toLocaleString()} tokens (物理底层真实极限: ${telemetryLimit.toLocaleString()})`;
+
+      const pctVal = Math.min(100, Math.max(0, (currentTokens / effectiveLimit) * 100));
       const displayPct = `${Math.round(pctVal)}%`;
       const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      
       let sliceColor = isDark ? '#4ade80' : '#2d6a4f';
-      if (pctVal > 80) sliceColor = isDark ? '#f87171' : '#dc2626';
-      else if (pctVal > 60) sliceColor = isDark ? '#fbbf24' : '#d97706';
+      let healthText = '良好 (Healthy: <60%)';
+      if (pctVal > 80) {
+        sliceColor = isDark ? '#f87171' : '#dc2626';
+        healthText = '危险 (Critical: >80%)';
+      } else if (pctVal > 60) {
+        sliceColor = isDark ? '#fbbf24' : '#d97706';
+        healthText = '注意 (Warning: 60-80%)';
+      }
       const unfilledColor = isDark ? '#3f3f46' : '#d4d4d8';
 
       const pieEl = document.getElementById('session-usage-pie');
@@ -1051,14 +1119,39 @@
         pctEl.style.color = sliceColor;
       }
 
-      document.getElementById('session-health-label').textContent = ov.healthStatus;
+      // 注意：session-health-dot 现在作为解锁状态指示灯，其颜色严格由解锁状态独立管理，不再随上下文占用率变化！
+      const healthLabel = document.getElementById('session-health-label');
+      if (healthLabel) healthLabel.textContent = healthText;
 
       document.getElementById('session-cache-ratio').textContent = `${ov.cacheHitRatio}%`;
       document.getElementById('session-cache-tokens').textContent = `${ov.cacheTokens.toLocaleString()} tokens`;
       document.getElementById('session-uncached').textContent = ov.uncachedTokens.toLocaleString();
       document.getElementById('session-output').textContent = ov.totalOutputTokens.toLocaleString();
       document.getElementById('session-turns').textContent = `${ov.totalModelTurns} 轮模型交互`;
-      document.getElementById('session-remaining').textContent = ov.remainingTokens.toLocaleString();
+      
+      const remainingTokens = Math.max(0, effectiveLimit - currentTokens);
+      document.getElementById('session-remaining').textContent = remainingTokens.toLocaleString();
+      const remSub = document.getElementById('session-remaining-sub');
+      if (remSub) {
+        if (activePreset === '512k') remSub.textContent = '至 512K 预算';
+        else if (activePreset === '900k') remSub.textContent = '至 900K 预算';
+        else if (activePreset === '256k') remSub.textContent = '至 256K 上限';
+        else remSub.textContent = '至物理全量上限';
+      }
+
+      const barContainer = document.getElementById('session-bar-container');
+      const barFill = document.getElementById('session-bar-fill');
+      if (barFill) {
+        const fillW = (currentTokens > 0 && pctVal < 0.5) ? 0.5 : pctVal;
+        barFill.style.width = `${fillW}%`;
+      }
+      if (barContainer) {
+        barContainer.title = `当前会话窗口占用: ${currentTokens.toLocaleString()} / ${effectiveLimit.toLocaleString()} tokens (${Math.round(pctVal)}%)`;
+      }
+    }
+
+    function renderSessionView(data) {
+      sessionDataCache = data;
 
       const barContainer = document.getElementById('session-bar-container');
       const barFill = document.getElementById('session-bar-fill');
@@ -1067,14 +1160,7 @@
       const barUser = document.getElementById('session-bar-user');
       const barModel = document.getElementById('session-bar-model');
 
-      const usagePct = Math.min(100, Math.max(0, Number(ov.usagePercent) || 0));
-      if (barFill) {
-        const fillW = (ov.currentTotalContext > 0 && usagePct < 0.5) ? 0.5 : usagePct;
-        barFill.style.width = `${fillW}%`;
-      }
-      if (barContainer) {
-        barContainer.title = `当前会话窗口占用: ${(ov.currentTotalContext || 0).toLocaleString()} / ${(ov.modelLimit || 0).toLocaleString()} tokens (${usagePct}%)`;
-      }
+      renderSessionOverviewWithPreset();
 
       if (data.breakdown && data.breakdown.length === 3) {
         // Official 3D Groups: System Prompt, Tools, Chat Messages
@@ -1631,9 +1717,298 @@
       }
     }
 
+    // ==========================================
+    // Context Window Unlocker & Preset Controller
+    // ==========================================
+    let cachedUnlockStatus = null;
+    let isUnlocking = false;
+
+    async function fetchUnlockStatus() {
+      try {
+        const fetchFn = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch : fetch;
+        const res = await fetchFn('/api/context/unlock-status');
+        if (!res.ok) return;
+        const data = await res.json();
+        cachedUnlockStatus = data;
+        if (data && data.activePreset) {
+          localStorage.setItem('agy_context_preset', data.activePreset);
+        }
+        renderUnlockBadge(data);
+        renderSessionOverviewWithPreset();
+      } catch (err) {
+        console.error('Failed to fetch unlock status:', err);
+      }
+    }
+
+    function renderUnlockBadge(data) {
+      const btn = document.getElementById('unlock-badge-btn');
+      const label = document.getElementById('unlock-badge-label');
+      const tag = document.getElementById('unlock-badge-tag');
+      const svgIcon = document.getElementById('unlock-svg-icon');
+      const svgPath = document.getElementById('unlock-svg-path');
+      if (!btn || !label) return;
+
+      const isDesktopUnlocked = data.desktop && data.desktop.isUnlocked;
+      const isCliUnlocked = data.cli && data.cli.isUnlocked;
+      const anyUnlocked = isDesktopUnlocked || isCliUnlocked;
+
+      // 动态读取当前设定的 preset，绝不再写死
+      const currentPreset = (data && data.activePreset) || localStorage.getItem('agy_context_preset') || 'dynamic';
+
+      let presetLabel = '全量';
+      if (currentPreset === '512k') presetLabel = '512K';
+      else if (currentPreset === '900k') presetLabel = '900K';
+      else if (currentPreset === '256k') presetLabel = '256K';
+      else presetLabel = '全量';
+
+      if (tag) tag.textContent = presetLabel;
+
+      if (anyUnlocked) {
+        if (svgPath) {
+          // Open lock SVG path
+          svgPath.setAttribute('d', 'M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z');
+        }
+        if (svgIcon) {
+          svgIcon.className = 'w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 transition-colors';
+        }
+        label.textContent = '已解锁';
+        btn.title = `底层门禁已解除，当前设定: ${presetLabel}，点击管理`;
+      } else {
+        if (svgPath) {
+          // Closed lock SVG path
+          svgPath.setAttribute('d', 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z');
+        }
+        if (svgIcon) {
+          svgIcon.className = 'w-3.5 h-3.5 text-amber-500 dark:text-amber-400 transition-colors';
+        }
+        label.textContent = '未解锁';
+        btn.title = '当前上下文受限 (256K)，点击打开上下文解锁';
+      }
+    }
+
+    function openUnlockModal() {
+      const modal = document.getElementById('unlock-modal');
+      const card = document.getElementById('unlock-modal-card');
+      if (!modal) return;
+      modal.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        modal.classList.remove('opacity-0');
+        if (card) {
+          card.classList.remove('scale-95');
+          card.classList.add('scale-100');
+        }
+      });
+
+      // Synchronize modal preset select
+      const mSel = document.getElementById('modal-context-preset-select');
+      const activePreset = (cachedUnlockStatus && cachedUnlockStatus.activePreset) || localStorage.getItem('agy_context_preset') || 'dynamic';
+      if (mSel) {
+        mSel.value = activePreset;
+      }
+      updateUnlockModalDetails();
+    }
+
+    function closeUnlockModal() {
+      if (isUnlocking) return;
+      const modal = document.getElementById('unlock-modal');
+      const card = document.getElementById('unlock-modal-card');
+      if (!modal) return;
+      modal.classList.add('opacity-0');
+      if (card) {
+        card.classList.remove('scale-100');
+        card.classList.add('scale-95');
+      }
+      setTimeout(() => {
+        modal.classList.add('hidden');
+      }, 200);
+    }
+
+    function updateUnlockModalDetails() {
+      if (!cachedUnlockStatus) return;
+      const s = cachedUnlockStatus;
+
+      // Desktop
+      const dBadge = document.getElementById('um-desktop-badge');
+      const dPath = document.getElementById('um-desktop-path');
+      if (s.desktop && s.desktop.exists) {
+        dPath.textContent = s.desktop.path;
+        dPath.title = s.desktop.path;
+        if (s.desktop.isUnlocked) {
+          dBadge.textContent = '已解锁';
+          dBadge.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono border border-emerald-500/30 bg-emerald-500/10 text-emerald-400';
+        } else {
+          dBadge.textContent = '未解锁 (256K截断)';
+          dBadge.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono border border-amber-500/40 bg-amber-500/10 text-amber-400';
+        }
+      } else {
+        dPath.textContent = '未检测到桌面端二进制';
+        dBadge.textContent = '未检测到';
+      }
+
+      // CLI
+      const cBadge = document.getElementById('um-cli-badge');
+      const cPath = document.getElementById('um-cli-path');
+      if (s.cli && s.cli.exists) {
+        cPath.textContent = s.cli.path;
+        cPath.title = s.cli.path;
+        if (s.cli.isUnlocked) {
+          cBadge.textContent = '已解锁';
+          cBadge.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono border border-emerald-500/30 bg-emerald-500/10 text-emerald-400';
+        } else {
+          cBadge.textContent = '未解锁';
+          cBadge.className = 'px-1.5 py-0.5 rounded text-[9px] font-mono border border-amber-500/40 bg-amber-500/10 text-amber-400';
+        }
+      } else {
+        cPath.textContent = '未检测到独立 CLI (以桌面端优先)';
+        cBadge.textContent = '桌面模式';
+      }
+
+      const g3a = document.getElementById('um-gate3a-status');
+      const g3b = document.getElementById('um-gate3b-status');
+      const isAnyUnlocked = (s.desktop && s.desktop.isUnlocked) || (s.cli && s.cli.isUnlocked);
+      if (isAnyUnlocked) {
+        if (g3a) { g3a.textContent = '已清除 (0x3e800 6x nop)'; g3a.className = 'font-semibold text-emerald-400'; }
+        if (g3b) { g3b.textContent = '已清零 (str wzr,[x0,#0xc])'; g3b.className = 'font-semibold text-emerald-400'; }
+        const btnTxt = document.getElementById('um-unlock-text');
+        if (btnTxt) btnTxt.textContent = '解锁';
+      } else {
+        if (g3a) { g3a.textContent = '受限 (硬编码 256,000)'; g3a.className = 'font-semibold text-amber-400'; }
+        if (g3b) { g3b.textContent = '受限 (实验配置强制覆盖)'; g3b.className = 'font-semibold text-amber-400'; }
+        const btnTxt = document.getElementById('um-unlock-text');
+        if (btnTxt) btnTxt.textContent = '解锁';
+      }
+    }
+
+    function appendUnlockLog(text, isAppend = false) {
+      const logContainer = document.getElementById('um-log-container');
+      const logBox = document.getElementById('um-log');
+      if (!logBox) return;
+      if (logContainer) logContainer.classList.remove('hidden');
+      if (isAppend) {
+        logBox.textContent += text;
+      } else {
+        logBox.textContent = text;
+      }
+
+      // Auto-scroll the log textarea itself to bottom
+      logBox.scrollTop = logBox.scrollHeight;
+
+      // Auto-scroll modal container smoothly so bottom instructions are in plain sight
+      requestAnimationFrame(() => {
+        logBox.scrollTop = logBox.scrollHeight;
+        if (logContainer) {
+          logContainer.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      });
+      setTimeout(() => {
+        logBox.scrollTop = logBox.scrollHeight;
+        if (logContainer) {
+          logContainer.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      }, 60);
+    }
+
+    async function applyUnlockFromModal() {
+      if (isUnlocking) return;
+      isUnlocking = true;
+      const btn = document.getElementById('um-unlock-btn');
+      const txt = document.getElementById('um-unlock-text');
+      const mSel = document.getElementById('modal-context-preset-select');
+
+      if (btn) btn.disabled = true;
+      if (txt) txt.textContent = '正在解锁...';
+      
+      appendUnlockLog('[就绪] 正在定位 Go 符号表与目标指令序列并应用预设...\n');
+
+      try {
+        const fetchFn = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch : fetch;
+        
+        // Save user chosen preset first
+        if (mSel && mSel.value) {
+          localStorage.setItem('agy_context_preset', mSel.value);
+          if (cachedUnlockStatus) {
+            cachedUnlockStatus.activePreset = mSel.value;
+          }
+          await fetchFn('/api/context/preset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ preset: mSel.value })
+          }).catch(() => {});
+          renderUnlockBadge(cachedUnlockStatus);
+          renderSessionOverviewWithPreset();
+        }
+
+        const res = await fetchFn('/api/context/unlock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: 'all' })
+        });
+        const result = await res.json();
+        const hint = `\n============================================================\n` +
+          `[指引] ${result.message || ''}\n` +
+          `· Windows: 请在任务栏右键或系统托盘完全退出 Antigravity 后重新打开\n` +
+          `· macOS  : 请按 Cmd+Q 彻底退出后重新打开\n` +
+          `============================================================`;
+        
+        appendUnlockLog(`${result.output || ''}\n${hint}`);
+
+        if (result.success) {
+          if (txt) txt.textContent = '解锁';
+          await fetchUnlockStatus();
+          updateUnlockModalDetails();
+        } else {
+          if (txt) txt.textContent = '解锁';
+        }
+      } catch (err) {
+        appendUnlockLog(`\n[错误] ${err.message}`, true);
+        if (txt) txt.textContent = '解锁';
+      } finally {
+        if (btn) btn.disabled = false;
+        isUnlocking = false;
+      }
+    }
+
+    async function applyRestoreFromModal() {
+      if (isUnlocking) return;
+      isUnlocking = true;
+      const btn = document.getElementById('um-restore-btn');
+
+      if (btn) btn.disabled = true;
+      
+      appendUnlockLog('[就绪] 正在从备份文件原子恢复官方原版二进制...\n');
+
+      try {
+        const fetchFn = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch : fetch;
+        const res = await fetchFn('/api/context/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: 'all' })
+        });
+        const result = await res.json();
+        localStorage.setItem('agy_context_preset', '256k');
+        if (cachedUnlockStatus) {
+          cachedUnlockStatus.activePreset = '256k';
+        }
+        const hint = `\n============================================================\n` +
+          `[指引] ${result.message || '还原完成'}\n` +
+          `· 当前运行中的 Antigravity 仍在内存执行。请完全退出客户端并重新打开以生效！\n` +
+          `============================================================`;
+        appendUnlockLog(hint);
+
+        await fetchUnlockStatus();
+        updateUnlockModalDetails();
+      } catch (err) {
+        appendUnlockLog(`\n[还原错误] ${err.message}`, true);
+      } finally {
+        if (btn) btn.disabled = false;
+        isUnlocking = false;
+      }
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
       fetchSessionContext();
       fetchUpdateStatus(false);
+      fetchUnlockStatus();
       setInterval(() => {
         refreshCurrentView();
       }, 10000);
@@ -1716,6 +2091,127 @@
       </div>
     </div>
   </div>
-  </script>
+
+  <!-- Unlock Modal (Antigravity 2.0 Onyx Floating Island) -->
+  <div id="unlock-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-2xl max-w-lg w-full space-y-4 transform scale-95 transition-transform duration-200 max-h-[92vh] overflow-y-auto" id="unlock-modal-card">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-3 border-b border-[var(--border)]">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-7 h-7 rounded-lg border border-[var(--border)] bg-[var(--onyx-key)] shadow-[var(--onyx-key-shadow)] flex items-center justify-center overflow-hidden flex-shrink-0 text-[var(--foreground)]">
+            <svg class="w-4 h-4 text-[var(--foreground)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <h3 class="text-xs sm:text-sm font-semibold text-[var(--foreground)]">上下文门禁解锁与预算管理</h3>
+            <p class="text-[10px] text-[var(--muted-foreground)]">Cortex 256K 截断解除 · 预设档位配置</p>
+          </div>
+        </div>
+        <button onclick="closeUnlockModal()" class="w-6 h-6 rounded-md hover:bg-[var(--card-hover)] flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Target Preset Selection (Configured before unlock) -->
+      <div class="bg-[var(--card-subtle)] p-3 rounded-xl border border-[var(--border)] space-y-2">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-[var(--foreground)]">目标上下文档位</span>
+        </div>
+        <div class="relative">
+          <select id="modal-context-preset-select" onchange="onModalPresetChange(this.value)" class="w-full bg-[var(--card)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--foreground)] font-medium focus:outline-none appearance-none cursor-pointer hover:border-[var(--muted-foreground)] transition font-mono">
+            <option value="dynamic" selected>跟随实际动态 (动态全量 ~1.9x · 推荐)</option>
+            <option value="256k">256K (1.0x 基准消耗 · 官方默认)</option>
+            <option value="512k">512K (~1.3x 额度消耗 · 均衡扩展)</option>
+            <option value="900k">900K (~1.8x 额度消耗 · 深度分析)</option>
+          </select>
+          <div class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
+            </svg>
+          </div>
+        </div>
+        <!-- Multiplier Quick Reference Badges -->
+        <div class="grid grid-cols-3 gap-1.5 pt-1 text-[10px] font-mono">
+          <div class="bg-[var(--card)] p-1.5 rounded border border-[var(--border)] text-center">
+            <span class="text-[var(--muted-foreground)] block">256K 基准</span>
+            <span class="font-bold text-[var(--foreground)]">1.0x 消耗</span>
+          </div>
+          <div class="bg-[var(--card)] p-1.5 rounded border border-[var(--border)] text-center">
+            <span class="text-[var(--muted-foreground)] block">512K 扩展</span>
+            <span class="font-bold text-[var(--foreground)]">~1.3x 消耗</span>
+          </div>
+          <div class="bg-[var(--card)] p-1.5 rounded border border-[var(--border)] text-center">
+            <span class="text-[var(--muted-foreground)] block">900K 深度</span>
+            <span class="font-bold text-[var(--foreground)]">~1.8x 消耗</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overview Cards (Desktop & CLI Target Status) -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div class="bg-[var(--card-subtle)] p-3 rounded-xl border border-[var(--border)] space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] uppercase text-[var(--muted-foreground)] font-medium">桌面端 Language Server</span>
+            <span id="um-desktop-badge" class="px-1.5 py-0.5 rounded text-[9px] font-mono border border-[var(--border)] bg-[var(--card)]">检测中...</span>
+          </div>
+          <div id="um-desktop-path" class="text-[10px] font-mono text-[var(--muted-foreground)] truncate" title="--">--</div>
+          <div class="text-[10px] text-[var(--muted-foreground)] pt-0.5">控制门禁三 (Gate 3A & 3B)</div>
+        </div>
+
+        <div class="bg-[var(--card-subtle)] p-3 rounded-xl border border-[var(--border)] space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] uppercase text-[var(--muted-foreground)] font-medium">agy CLI 终端</span>
+            <span id="um-cli-badge" class="px-1.5 py-0.5 rounded text-[9px] font-mono border border-[var(--border)] bg-[var(--card)]">检测中...</span>
+          </div>
+          <div id="um-cli-path" class="text-[10px] font-mono text-[var(--muted-foreground)] truncate" title="--">--</div>
+          <div class="text-[10px] text-[var(--muted-foreground)] pt-0.5">控制门禁一、二与环境变量</div>
+        </div>
+      </div>
+
+      <!-- Gates Analysis Box -->
+      <div class="bg-[var(--card-subtle)] border border-[var(--border)] rounded-xl p-3 text-xs space-y-1.5 select-text">
+        <div class="text-[11px] font-medium text-[var(--foreground)] flex items-center justify-between">
+          <span>三道门禁机制状态 (Gate Analysis)</span>
+          <span class="text-[10px] text-[var(--muted-foreground)] font-mono">.gopclntab 动态定位</span>
+        </div>
+        <div class="text-[11px] text-[var(--muted-foreground)] space-y-1 font-mono leading-relaxed">
+          <div class="flex items-center justify-between">
+            <span>门禁三 A (utils.GetCheckpointConfig 256K 截断):</span>
+            <span id="um-gate3a-status" class="font-semibold text-amber-400">待解锁</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span>门禁三 B (applyFeatureProvider 256K 覆盖):</span>
+            <span id="um-gate3b-status" class="font-semibold text-amber-400">待解锁</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span>门禁一 & 二 (CLI TUI 档位与配置同步):</span>
+            <span id="um-gate12-status" class="text-[var(--muted-foreground)]">支持</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Log Output (Console preview) -->
+      <div id="um-log-container" class="space-y-1.5 hidden">
+        <div class="text-[10px] text-[var(--muted-foreground)] font-mono">执行日志:</div>
+        <div id="um-log" class="bg-[var(--card-subtle)] border border-[var(--border)] rounded-lg p-2.5 text-[11px] text-[var(--foreground)] max-h-40 overflow-y-auto font-mono whitespace-pre-wrap select-text scroll-smooth"></div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex items-center justify-between pt-2 border-t border-[var(--border)] gap-2">
+        <button id="um-restore-btn" onclick="applyRestoreFromModal()" class="px-3 py-1.5 text-xs rounded-lg border border-[var(--border)] bg-[var(--card-subtle)] hover:bg-[var(--card-hover)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition font-medium">
+          还原备份
+        </button>
+
+        <div class="flex items-center space-x-2">
+          <button id="um-unlock-btn" onclick="applyUnlockFromModal()" class="px-3.5 py-1.5 text-xs rounded-lg font-medium bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm hover:opacity-90 active:scale-95 transition flex items-center gap-1.5">
+            <span id="um-unlock-text">解锁</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

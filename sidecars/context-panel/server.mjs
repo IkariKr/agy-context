@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path';
 import os from 'node:os';
 import { analyzeTranscript, analyzeGlobalTokens, resolveTranscriptPath } from '../../scripts/context-analyzer.mjs';
 import { checkForUpdates, applyOneClickUpdate, getLocalVersion } from '../../scripts/updater.mjs';
+import { getOverallUnlockStatus, applyUnlock, restoreOriginal, savePreset, getSavedPreset } from '../../scripts/context-unlocker.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.ANTIGRAVITY_SIDECAR_WEB_PORT || '5173', 10);
@@ -94,6 +95,19 @@ const server = createServer(async (req, res) => {
         if (m) convId = m[1];
       }
       const data = await analyzeTranscript(transcriptPath, { conversationId: convId });
+      
+      // Inject saved preset & budget limit into response
+      try {
+        const presetInfo = getSavedPreset();
+        if (data && data.overview) {
+          data.overview.activePreset = presetInfo.preset;
+          data.overview.targetLimit = presetInfo.targetLimit;
+          if (presetInfo.targetLimit) {
+            data.overview.effectiveLimit = presetInfo.targetLimit;
+          }
+        }
+      } catch (e) {}
+
       res.writeHead(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-cache',
@@ -133,6 +147,106 @@ const server = createServer(async (req, res) => {
         'Access-Control-Allow-Origin': '*'
       });
       res.end(JSON.stringify(result));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // API: Get Context Unlock Status & Preset
+  if (url.pathname === '/api/context/unlock-status') {
+    try {
+      const data = await getOverallUnlockStatus();
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  // API: Apply Context Unlock (hot patch binary & resign)
+  if (url.pathname === '/api/context/unlock' && req.method === 'POST') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        let payload = {};
+        try { payload = JSON.parse(bodyStr || '{}'); } catch (e) {}
+        const result = await applyUnlock(payload.target || 'desktop');
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // API: Restore Original Binary from Backup
+  if (url.pathname === '/api/context/restore' && req.method === 'POST') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        let payload = {};
+        try { payload = JSON.parse(bodyStr || '{}'); } catch (e) {}
+        const result = await restoreOriginal(payload.target || 'desktop');
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // API: Set Context Preset (e.g. 1m, 900k, 512k, 256k, dynamic)
+  if (url.pathname === '/api/context/preset' && req.method === 'POST') {
+    let bodyStr = '';
+    req.on('data', chunk => { bodyStr += chunk; });
+    req.on('end', async () => {
+      try {
+        let payload = {};
+        try { payload = JSON.parse(bodyStr || '{}'); } catch (e) {}
+        const result = savePreset(payload.preset || 'dynamic');
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end(JSON.stringify(result));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    return;
+  }
+
+  // API: Get Context Preset
+  if (url.pathname === '/api/context/preset' && req.method === 'GET') {
+    try {
+      const data = getSavedPreset();
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(JSON.stringify(data));
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: err.message }));

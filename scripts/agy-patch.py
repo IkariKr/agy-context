@@ -423,15 +423,21 @@ def patch_gate2_store(data, funcs, text_va, text_off, arch):
 # Gate 3A: utils.GetCheckpointConfig -> remove 256,000 (0x3e800) ceiling
 # --------------------------------------------------------------------------
 
-def _find_generic_arm64_256k_clamp(body):
-    """Fallback matcher for mov xR,#0xe800 ; movk xR,#3,lsl#16 ... csel xD,xD,xR,lo."""
+def _find_generic_arm64_clamp(body):
+    """Matcher for movz xR, #low ; movk xR, #high, lsl #16 ... csel xD, xD, xR, lo.
+    Supports any token clamp >= 100,000 (e.g. 256K, 512K, 900K, 1M)."""
     hits = []
     for rel in range(0, len(body) - 24, 4):
         w0, w1 = struct.unpack_from("<II", body, rel)
-        if (w0 & 0xFFFFFFE0) != 0xD29D0000 or (w1 & 0xFFFFFFE0) != 0xF2A00060:
+        # movz xR, #imm, lsl #0 (0xD2800000)
+        # movk xR, #imm, lsl #16 (0xF2A00000)
+        if (w0 & 0xFFE00000) != 0xD2800000 or (w1 & 0xFFE00000) != 0xF2A00000:
             continue
         reg_lim = w0 & 0x1F
         if (w1 & 0x1F) != reg_lim:
+            continue
+        curr_lim = ((w0 >> 5) & 0xFFFF) | (((w1 >> 5) & 0xFFFF) << 16)
+        if curr_lim < 100000:
             continue
         # Look ahead up to 5 instructions for `csel xD, xD, xR, lo`
         for end_rel in range(rel + 12, min(rel + 32, len(body)), 4):
@@ -441,9 +447,12 @@ def _find_generic_arm64_256k_clamp(body):
                 rn = (wc >> 5) & 0x1F
                 rm = (wc >> 16) & 0x1F
                 if rd == rn and rm == reg_lim:
-                    hits.append((rel, end_rel + 4 - rel))
+                    hits.append((rel, end_rel + 4 - rel, curr_lim, reg_lim, rd))
                     break
     return hits
+
+# Backward-compatible alias
+_find_generic_arm64_256k_clamp = lambda body: [(h[0], h[1]) for h in _find_generic_arm64_clamp(body)]
 
 
 def patch_gate3a_checkpoint(data, funcs, text_va, text_off, arch, target_limit=None):

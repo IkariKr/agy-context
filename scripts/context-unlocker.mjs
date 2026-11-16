@@ -55,6 +55,14 @@ export function resolvePython() {
     }
   }
 
+  if (!isWin) {
+    candidates.push(
+      '/opt/homebrew/bin/python3',
+      '/usr/local/bin/python3',
+      '/usr/bin/python3'
+    );
+  }
+
   candidates.push('python3', 'python', 'py', 'python3.12');
 
   for (const cmd of candidates) {

@@ -280,7 +280,7 @@ def decode_bl_target(pc, word):
 
 def patch_gate1_ui(data, funcs, text_va, text_off, arch):
     if FUNC_OFFERS not in funcs:
-        raise PatchError(f"symbol not found: {FUNC_OFFERS}")
+        return False, f"[Gate 1] {FUNC_OFFERS}: not present in binary (skipped)"
     entryoff, _ = funcs[FUNC_OFFERS]
     blob = RET_TRUE_ARM64 if arch == "arm64" else RET_TRUE_X64
     off = text_off + entryoff
@@ -446,7 +446,7 @@ def _find_generic_arm64_256k_clamp(body):
     return hits
 
 
-def patch_gate3a_checkpoint(data, funcs, text_va, text_off, arch):
+def patch_gate3a_checkpoint(data, funcs, text_va, text_off, arch, target_limit=None):
     if FUNC_CHECKPOINT not in funcs:
         raise PatchError(f"symbol not found: {FUNC_CHECKPOINT}")
     entryoff, size = funcs[FUNC_CHECKPOINT]
@@ -456,42 +456,127 @@ def patch_gate3a_checkpoint(data, funcs, text_va, text_off, arch):
     fn_va = text_va + entryoff
     body = bytes(data[fn_off:fn_off + size])
 
+    target = int(target_limit) if target_limit is not None else 0
+
     if arch == "arm64":
         nop6 = NOP_ARM64 * 6
-        idx = body.find(CLAMP_256K_ARM64)
-        if idx >= 0:
-            if body.find(CLAMP_256K_ARM64, idx + 1) >= 0:
-                raise PatchError(f"{FUNC_CHECKPOINT}: multiple 256K clamps found")
-            site = fn_off + idx
-            data[site:site + 24] = nop6
-            return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: removed 256K (0x3e800) clamp "
-                          f"@ {fn_va + idx:#x} (6x nop)")
+        if target > 0:
+            low16 = target & 0xffff
+            high16 = (target >> 16) & 0xffff
+            mov_low = 0xd2800000 | (low16 << 5) | 4
+            movk_high = 0xf2a00000 | (high16 << 5) | (1 << 21) | 4
+            cmp_w3_x4 = 0x6b04007f
+            csel = 0x9a843063
+            target_clamp = struct.pack("<IIIIII", mov_low, movk_high, cmp_w3_x4, mov_low, movk_high, csel)
 
-        generic = _find_generic_arm64_256k_clamp(body)
-        if len(generic) == 1:
-            rel, length = generic[0]
-            site = fn_off + rel
-            data[site:site + length] = NOP_ARM64 * (length // 4)
-            return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: removed 256K (0x3e800) clamp "
-                          f"@ {fn_va + rel:#x} ({length // 4}x nop)")
+            idx = body.find(target_clamp)
+            if idx >= 0:
+                return False, f"[Gate 3A] {FUNC_CHECKPOINT}: already clamped to {target:,} tokens (0x{target:x})"
 
-        if body.find(nop6) >= 0:
-            return False, f"[Gate 3A] {FUNC_CHECKPOINT}: already patched"
-        raise PatchError(f"{FUNC_CHECKPOINT}: 256K (0x3e800) clamp pattern not found")
+            generic = _find_generic_arm64_256k_clamp(body)
+            if generic:
+                rel = generic[0][0]
+                site = fn_off + rel
+                data[site:site + 24] = target_clamp
+                return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: clamped to {target:,} tokens (0x{target:x}) "
+                              f"@ {fn_va + rel:#x}")
+
+            nop_idx = body.find(nop6)
+            if nop_idx >= 0:
+                site = fn_off + nop_idx
+                data[site:site + 24] = target_clamp
+                return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: clamped to {target:,} tokens (0x{target:x}) "
+                              f"@ {fn_va + nop_idx:#x}")
+
+            raise PatchError(f"{FUNC_CHECKPOINT}: arm64 clamp site not found")
+        else:
+            if body.find(nop6) >= 0:
+                return False, f"[Gate 3A] {FUNC_CHECKPOINT}: already patched (unlimited)"
+
+            idx = body.find(CLAMP_256K_ARM64)
+            if idx >= 0:
+                site = fn_off + idx
+                data[site:site + 24] = nop6
+                return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: removed 256K clamp @ {fn_va + idx:#x} (6x nop)")
+
+            generic = _find_generic_arm64_256k_clamp(body)
+            if generic:
+                rel, length = generic[0]
+                site = fn_off + rel
+                data[site:site + length] = NOP_ARM64 * (length // 4)
+                return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: removed clamp @ {fn_va + rel:#x} ({length // 4}x nop)")
+
+            raise PatchError(f"{FUNC_CHECKPOINT}: arm64 clamp pattern not found")
 
     # x86-64
-    idx = body.find(CLAMP_256K_X64)
-    if idx >= 0:
-        if body.find(CLAMP_256K_X64, idx + 1) >= 0:
-            raise PatchError(f"{FUNC_CHECKPOINT}: multiple 256K clamps found")
-        site = fn_off + idx
-        data[site:site + len(PATCH_256K_X64)] = PATCH_256K_X64
-        return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: removed 256K (0x3e800) clamp "
-                      f"@ {fn_va + idx:#x} (mov %edx,%esi + 12x nop)")
+    clamp_re = rb'\x81([\xf8-\xff])(....)[\xb8-\xbf](....)\x0f\x42([\xc0-\xff])'
+    bypassed_re = rb'\x89([\xc0-\xff])\x90{12}'
 
-    if body.find(PATCH_256K_X64) >= 0:
-        return False, f"[Gate 3A] {FUNC_CHECKPOINT}: already patched"
-    raise PatchError(f"{FUNC_CHECKPOINT}: x86-64 256K (0x3e800) clamp pattern not found")
+    valid_clamps = []
+    for m in re.finditer(clamp_re, body):
+        c_lim = struct.unpack("<I", m.group(2))[0]
+        if c_lim >= 100000:
+            valid_clamps.append((m, c_lim))
+
+    m_clamp = valid_clamps[0][0] if valid_clamps else None
+    m_bypassed = re.search(bypassed_re, body)
+
+    if target > 0:
+        lim_bytes = struct.pack("<I", target)
+        if m_clamp:
+            reg1 = m_clamp.group(1)[0] - 0xf8
+            curr_lim = struct.unpack("<I", m_clamp.group(2))[0]
+            cmov_byte = m_clamp.group(4)[0]
+            reg2 = (cmov_byte - 0xc0 - reg1) // 8
+
+            if curr_lim == target:
+                return False, f"[Gate 3A] {FUNC_CHECKPOINT}: already clamped to {target:,} tokens (0x{target:x})"
+
+            cmp_b = bytes([0x81, 0xf8 + reg1]) + lim_bytes
+            mov_b = bytes([0xb8 + reg2]) + lim_bytes
+            cmov_b = bytes([0x0f, 0x42, 0xc0 + reg2 * 8 + reg1])
+            new_clamp = cmp_b + mov_b + cmov_b
+
+            site = fn_off + m_clamp.start()
+            data[site:site + 14] = new_clamp
+            return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: updated clamp from {curr_lim:,} to {target:,} tokens (0x{target:x}) "
+                          f"@ {fn_va + m_clamp.start():#x}")
+
+        if m_bypassed:
+            modrm = m_bypassed.group(1)[0]
+            reg1 = (modrm - 0xc0) >> 3
+            reg2 = (modrm - 0xc0) & 7
+
+            cmp_b = bytes([0x81, 0xf8 + reg1]) + lim_bytes
+            mov_b = bytes([0xb8 + reg2]) + lim_bytes
+            cmov_b = bytes([0x0f, 0x42, 0xc0 + reg2 * 8 + reg1])
+            new_clamp = cmp_b + mov_b + cmov_b
+
+            site = fn_off + m_bypassed.start()
+            data[site:site + 14] = new_clamp
+            return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: hard-clamped to {target:,} tokens (0x{target:x}) "
+                          f"@ {fn_va + m_bypassed.start():#x}")
+
+        raise PatchError(f"{FUNC_CHECKPOINT}: x86-64 clamp site not found")
+    else:
+        if m_bypassed:
+            return False, f"[Gate 3A] {FUNC_CHECKPOINT}: already patched (unlimited)"
+
+        if m_clamp:
+            reg1 = m_clamp.group(1)[0] - 0xf8
+            curr_lim = struct.unpack("<I", m_clamp.group(2))[0]
+            cmov_byte = m_clamp.group(4)[0]
+            reg2 = (cmov_byte - 0xc0 - reg1) // 8
+
+            mov_modrm = 0xc0 + reg1 * 8 + reg2
+            patch_bytes = bytes([0x89, mov_modrm]) + b'\x90' * 12
+
+            site = fn_off + m_clamp.start()
+            data[site:site + 14] = patch_bytes
+            return True, (f"[Gate 3A] {FUNC_CHECKPOINT}: removed {curr_lim:,} clamp @ {fn_va + m_clamp.start():#x} "
+                          f"(mov reg,reg + 12x nop)")
+
+        raise PatchError(f"{FUNC_CHECKPOINT}: x86-64 clamp site not found")
 
 
 # --------------------------------------------------------------------------
@@ -723,9 +808,23 @@ def write_atomic_signed(dst, data, src_for_entitlements=None, make_backup=False)
     try:
         with open(tmp, "wb") as fh:
             fh.write(data)
-        os.chmod(tmp, 0o755)
+        if sys.platform != "win32":
+            os.chmod(tmp, 0o755)
         resign(tmp, entitlements_xml=ent_xml, identifier=ident)
-        os.replace(tmp, dst)
+        try:
+            os.replace(tmp, dst)
+        except OSError:
+            if sys.platform == "win32":
+                # On Windows, if dst is running, direct replace might fail with WinError 32 or 5.
+                # A running Windows executable can be renamed away first:
+                old = f"{dst}.old.{os.getpid()}"
+                try:
+                    os.rename(dst, old)
+                    os.rename(tmp, dst)
+                except Exception:
+                    raise
+            else:
+                raise
     except Exception:
         if os.path.exists(tmp):
             os.unlink(tmp)
@@ -751,6 +850,8 @@ def main():
                     help="skip optional AGY_CLI_AUTO_COMPACT_OVERRIDE restore")
     ap.add_argument("--no-backup", action="store_true",
                     help="skip creating <binary>.bak on --in-place")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="target token limit clamp in utils.GetCheckpointConfig (e.g. 512000, 900000; 0 for unlimited)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--in-place", action="store_true")
     ap.add_argument("--locate", action="store_true", help="print target symbols only")
@@ -811,7 +912,10 @@ def main():
         )
 
     for patch_fn in patch_pipeline:
-        changed, msg = patch_fn(data, funcs, text_va, text_off, arch)
+        if patch_fn == patch_gate3a_checkpoint:
+            changed, msg = patch_fn(data, funcs, text_va, text_off, arch, target_limit=args.limit)
+        else:
+            changed, msg = patch_fn(data, funcs, text_va, text_off, arch)
         print(("[*] " if changed else "[=] ") + msg)
 
     if not is_server_only and not args.no_env_fix:

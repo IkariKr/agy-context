@@ -295,13 +295,13 @@
             </div>
           </div>
 
-          <!-- Context Unlock Status & Management Capsule (No Emojis, Clean Onyx Design, Click to Manage) -->
-          <button id="unlock-badge-btn" onclick="openUnlockModal()" class="flex items-center gap-2 px-2.5 py-1 rounded-lg border-2 border-[var(--border)] bg-[var(--onyx-key)] hover:bg-[var(--card-hover)] hover:border-[var(--muted-foreground)] text-[var(--foreground)] text-xs font-medium shadow-[var(--onyx-key-shadow)] transition select-none active:scale-95 group" title="点击查看与管理底层上下文门禁">
-            <svg id="unlock-svg-icon" class="w-3.5 h-3.5 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path id="unlock-svg-path" stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          <!-- Context Unlock Status Capsule (Native Antigravity Onyx Key) -->
+          <button id="unlock-badge-btn" onclick="openUnlockModal()" class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[var(--border)] bg-[var(--onyx-key)] hover:bg-[var(--card-hover)] hover:border-[var(--muted-foreground)]/40 text-[var(--foreground)] text-xs font-medium shadow-[var(--onyx-key-shadow)] transition select-none active:scale-95 group cursor-pointer" title="点击查看与管理底层上下文门禁">
+            <svg id="unlock-svg-icon" class="w-3.5 h-3.5 text-emerald-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path id="unlock-svg-path" stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 118 0v4h8z" />
             </svg>
-            <span id="session-health-dot" class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background-color: var(--pie-green);"></span>
-            <span id="unlock-badge-label" class="font-mono text-[11px] tracking-tight">检测中...</span>
+            <span id="unlock-badge-label" class="text-xs font-medium text-[var(--foreground)] tracking-tight">已解锁</span>
+            <span id="unlock-badge-tag" class="px-1.5 py-0.2 rounded text-[10px] font-mono bg-[var(--card-subtle)] text-[var(--muted-foreground)] border border-[var(--border)] font-normal">512K</span>
           </button>
         </div>
 
@@ -1743,8 +1743,9 @@
     function renderUnlockBadge(data) {
       const btn = document.getElementById('unlock-badge-btn');
       const label = document.getElementById('unlock-badge-label');
+      const tag = document.getElementById('unlock-badge-tag');
+      const svgIcon = document.getElementById('unlock-svg-icon');
       const svgPath = document.getElementById('unlock-svg-path');
-      const statusDot = document.getElementById('session-health-dot');
       if (!btn || !label) return;
 
       const isDesktopUnlocked = data.desktop && data.desktop.isUnlocked;
@@ -1754,38 +1755,33 @@
       // 动态读取当前设定的 preset，绝不再写死
       const currentPreset = (data && data.activePreset) || localStorage.getItem('agy_context_preset') || 'dynamic';
 
+      let presetLabel = '全量';
+      if (currentPreset === '512k') presetLabel = '512K';
+      else if (currentPreset === '900k') presetLabel = '900K';
+      else if (currentPreset === '256k') presetLabel = '256K';
+      else presetLabel = '全量';
+
+      if (tag) tag.textContent = presetLabel;
+
       if (anyUnlocked) {
         if (svgPath) {
           // Open lock SVG path
           svgPath.setAttribute('d', 'M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z');
         }
-        if (statusDot) {
-          statusDot.style.backgroundColor = '#10b981'; // 保持绿色，严格反映已解锁状态
-          statusDot.title = '状态: 底层已解锁';
+        if (svgIcon) {
+          svgIcon.className = 'w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 transition-colors';
         }
-
-        let presetLabel = '物理全量';
-        if (currentPreset === '512k') presetLabel = '512K';
-        else if (currentPreset === '900k') presetLabel = '900K';
-        else if (currentPreset === '256k') presetLabel = '256K';
-        else presetLabel = '物理全量';
-
-        label.textContent = `已解锁 (${presetLabel})`;
-        btn.classList.remove('border-amber-500/50', 'text-amber-400');
-        btn.classList.add('border-emerald-500/50', 'text-emerald-400');
-        btn.title = `底层 256K 限制已解除，当前设定: ${presetLabel}，点击管理`;
+        label.textContent = '已解锁';
+        btn.title = `底层门禁已解除，当前设定: ${presetLabel}，点击管理`;
       } else {
         if (svgPath) {
           // Closed lock SVG path
           svgPath.setAttribute('d', 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z');
         }
-        if (statusDot) {
-          statusDot.style.backgroundColor = '#f59e0b'; // 保持琥珀色，严格反映未解锁状态
-          statusDot.title = '状态: 上下文受限 (256K)';
+        if (svgIcon) {
+          svgIcon.className = 'w-3.5 h-3.5 text-amber-500 dark:text-amber-400 transition-colors';
         }
-        label.textContent = '上下文解锁';
-        btn.classList.remove('border-emerald-500/50', 'text-emerald-400');
-        btn.classList.add('border-amber-500/50', 'text-amber-400');
+        label.textContent = '未解锁';
         btn.title = '当前上下文受限 (256K)，点击打开上下文解锁';
       }
     }
@@ -1883,19 +1879,46 @@
       }
     }
 
+    function appendUnlockLog(text, isAppend = false) {
+      const logContainer = document.getElementById('um-log-container');
+      const logBox = document.getElementById('um-log');
+      if (!logBox) return;
+      if (logContainer) logContainer.classList.remove('hidden');
+      if (isAppend) {
+        logBox.textContent += text;
+      } else {
+        logBox.textContent = text;
+      }
+
+      // Auto-scroll the log textarea itself to bottom
+      logBox.scrollTop = logBox.scrollHeight;
+
+      // Auto-scroll modal container smoothly so bottom instructions are in plain sight
+      requestAnimationFrame(() => {
+        logBox.scrollTop = logBox.scrollHeight;
+        if (logContainer) {
+          logContainer.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      });
+      setTimeout(() => {
+        logBox.scrollTop = logBox.scrollHeight;
+        if (logContainer) {
+          logContainer.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      }, 60);
+    }
+
     async function applyUnlockFromModal() {
       if (isUnlocking) return;
       isUnlocking = true;
       const btn = document.getElementById('um-unlock-btn');
       const txt = document.getElementById('um-unlock-text');
-      const logContainer = document.getElementById('um-log-container');
-      const logBox = document.getElementById('um-log');
       const mSel = document.getElementById('modal-context-preset-select');
 
       if (btn) btn.disabled = true;
       if (txt) txt.textContent = '正在解锁...';
-      if (logContainer) logContainer.classList.remove('hidden');
-      if (logBox) logBox.textContent = '[就绪] 正在定位 Go 符号表与目标指令序列...\n';
+      
+      appendUnlockLog('[就绪] 正在定位 Go 符号表与目标指令序列并应用预设...\n');
 
       try {
         const fetchFn = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch : fetch;
@@ -1921,9 +1944,14 @@
           body: JSON.stringify({ target: 'all' })
         });
         const result = await res.json();
-        if (logBox) {
-          logBox.textContent = `${result.output || ''}\n\n[提示] ${result.message || ''}\n\n[操作指引] 请退出并完全重启 Antigravity 桌面端应用（按 Cmd+Q 后重新打开），后台守护进程才会加载新预算！`;
-        }
+        const hint = `\n============================================================\n` +
+          `[指引] ${result.message || ''}\n` +
+          `· Windows: 请在任务栏右键或系统托盘完全退出 Antigravity 后重新打开\n` +
+          `· macOS  : 请按 Cmd+Q 彻底退出后重新打开\n` +
+          `============================================================`;
+        
+        appendUnlockLog(`${result.output || ''}\n${hint}`);
+
         if (result.success) {
           if (txt) txt.textContent = '解锁';
           await fetchUnlockStatus();
@@ -1932,7 +1960,7 @@
           if (txt) txt.textContent = '解锁';
         }
       } catch (err) {
-        if (logBox) logBox.textContent += `\n[错误] ${err.message}`;
+        appendUnlockLog(`\n[错误] ${err.message}`, true);
         if (txt) txt.textContent = '解锁';
       } finally {
         if (btn) btn.disabled = false;
@@ -1944,12 +1972,10 @@
       if (isUnlocking) return;
       isUnlocking = true;
       const btn = document.getElementById('um-restore-btn');
-      const logContainer = document.getElementById('um-log-container');
-      const logBox = document.getElementById('um-log');
 
       if (btn) btn.disabled = true;
-      if (logContainer) logContainer.classList.remove('hidden');
-      if (logBox) logBox.textContent = '[就绪] 正在从备份文件原子恢复官方原版二进制并重签名...\n';
+      
+      appendUnlockLog('[就绪] 正在从备份文件原子恢复官方原版二进制...\n');
 
       try {
         const fetchFn = (window.sidecar && window.sidecar.fetch) ? window.sidecar.fetch : fetch;
@@ -1963,11 +1989,16 @@
         if (cachedUnlockStatus) {
           cachedUnlockStatus.activePreset = '256k';
         }
-        if (logBox) logBox.textContent = `${result.message || '还原完成'}\n\n[重要指引] 当前运行中的 Antigravity 桌面端应用仍在内存执行。请完全退出应用（Cmd+Q）并重新打开，后台 language_server 守护进程才会加载官方原版！`;
+        const hint = `\n============================================================\n` +
+          `[指引] ${result.message || '还原完成'}\n` +
+          `· 当前运行中的 Antigravity 仍在内存执行。请完全退出客户端并重新打开以生效！\n` +
+          `============================================================`;
+        appendUnlockLog(hint);
+
         await fetchUnlockStatus();
         updateUnlockModalDetails();
       } catch (err) {
-        if (logBox) logBox.textContent += `\n[还原错误] ${err.message}`;
+        appendUnlockLog(`\n[还原错误] ${err.message}`, true);
       } finally {
         if (btn) btn.disabled = false;
         isUnlocking = false;
@@ -2063,7 +2094,7 @@
 
   <!-- Unlock Modal (Antigravity 2.0 Onyx Floating Island) -->
   <div id="unlock-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden opacity-0 transition-opacity duration-200">
-    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-2xl max-w-lg w-full space-y-4 transform scale-95 transition-transform duration-200" id="unlock-modal-card">
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 shadow-2xl max-w-lg w-full space-y-4 transform scale-95 transition-transform duration-200 max-h-[92vh] overflow-y-auto" id="unlock-modal-card">
       <!-- Modal Header -->
       <div class="flex items-center justify-between pb-3 border-b border-[var(--border)]">
         <div class="flex items-center space-x-2.5">
@@ -2088,7 +2119,6 @@
       <div class="bg-[var(--card-subtle)] p-3 rounded-xl border border-[var(--border)] space-y-2">
         <div class="flex items-center justify-between">
           <span class="text-xs font-semibold text-[var(--foreground)]">目标上下文档位</span>
-          <span class="text-[10px] text-[var(--muted-foreground)] font-mono">将在解锁并重启后生效</span>
         </div>
         <div class="relative">
           <select id="modal-context-preset-select" onchange="onModalPresetChange(this.value)" class="w-full bg-[var(--card)] border border-[var(--border)] rounded-lg px-3 py-1.5 text-xs text-[var(--foreground)] font-medium focus:outline-none appearance-none cursor-pointer hover:border-[var(--muted-foreground)] transition font-mono">
@@ -2118,9 +2148,6 @@
             <span class="font-bold text-[var(--foreground)]">~1.8x 消耗</span>
           </div>
         </div>
-        <p class="text-[10px] text-[var(--muted-foreground)] leading-relaxed">
-          请在解锁前选定期望的上下文配置。选定后点击下方“解锁”，底层将完成汇编打补丁并持久化配置。
-        </p>
       </div>
 
       <!-- Overview Cards (Desktop & CLI Target Status) -->
@@ -2167,9 +2194,9 @@
       </div>
 
       <!-- Action Log Output (Console preview) -->
-      <div id="um-log-container" class="space-y-1 hidden">
+      <div id="um-log-container" class="space-y-1.5 hidden">
         <div class="text-[10px] text-[var(--muted-foreground)] font-mono">执行日志:</div>
-        <div id="um-log" class="bg-black/40 border border-[var(--border)] rounded-lg p-2.5 text-[10px] text-[var(--muted-foreground)] max-h-32 overflow-y-auto font-mono whitespace-pre-wrap select-text"></div>
+        <div id="um-log" class="bg-[var(--card-subtle)] border border-[var(--border)] rounded-lg p-2.5 text-[11px] text-[var(--foreground)] max-h-40 overflow-y-auto font-mono whitespace-pre-wrap select-text scroll-smooth"></div>
       </div>
 
       <!-- Modal Footer -->

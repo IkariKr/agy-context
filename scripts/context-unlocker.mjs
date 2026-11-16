@@ -1,6 +1,6 @@
 /**
  * @fileoverview Context Window Unlocker & Preset Manager for Antigravity (agy-context)
- * Bridges agy-patch.py to detect, unlock, restore, and configure context window presets.
+ * Bridges agy-patch.py to detect, unlock, restore, and configure context window presets across macOS, Linux, and Windows.
  * @author q1u
  */
 
@@ -26,25 +26,101 @@ export const PRESET_LIMITS = {
   '256k': 256000   // 256K nominal official clamp limit
 };
 
+let cachedPythonCmd = null;
+
 /**
- * Resolves candidate binary paths across macOS and Linux/Windows
+ * Resolves an active, working Python 3 executable across platforms.
+ * Handles Windows Store app execution aliases, py launcher, and custom installation paths.
+ * @returns {string} Executable command or absolute path
+ */
+export function resolvePython() {
+  if (cachedPythonCmd) return cachedPythonCmd;
+
+  const isWin = process.platform === 'win32';
+  const candidates = [];
+
+  if (isWin) {
+    candidates.push(
+      path.join(os.homedir(), '.local', 'bin', 'python3.12.exe'),
+      path.join(os.homedir(), '.local', 'bin', 'python3.exe'),
+      path.join(os.homedir(), '.local', 'bin', 'python.exe')
+    );
+    if (process.env.LOCALAPPDATA) {
+      candidates.push(
+        path.join(process.env.LOCALAPPDATA, 'Programs', 'Python', 'Python313', 'python.exe'),
+        path.join(process.env.LOCALAPPDATA, 'Programs', 'Python', 'Python312', 'python.exe'),
+        path.join(process.env.LOCALAPPDATA, 'Programs', 'Python', 'Python311', 'python.exe'),
+        path.join(process.env.LOCALAPPDATA, 'Programs', 'Python', 'Python310', 'python.exe')
+      );
+    }
+  }
+
+  candidates.push('python3', 'python', 'py', 'python3.12');
+
+  for (const cmd of candidates) {
+    try {
+      if (cmd.includes(path.sep) && !fs.existsSync(cmd)) continue;
+      const res = cp.execSync(`"${cmd}" --version`, {
+        timeout: 2500,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      if (res && (res.includes('Python 3') || res.includes('Python'))) {
+        cachedPythonCmd = cmd;
+        return cmd;
+      }
+    } catch (e) {}
+  }
+
+  cachedPythonCmd = isWin ? 'python' : 'python3';
+  return cachedPythonCmd;
+}
+
+/**
+ * Resolves candidate binary paths across macOS, Linux, and Windows.
  * @returns {{ desktop: string|null, cli: string|null }}
  */
 export function resolveTargetBinaries() {
   const result = { desktop: null, cli: null };
+  const isWin = process.platform === 'win32';
 
-  // 1. Desktop Language Server
+  // 1. Desktop Language Server Candidates
   const desktopCandidates = [
+    // Windows
+    path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Programs', 'antigravity', 'resources', 'bin', 'language_server.exe'),
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Antigravity', 'resources', 'bin', 'language_server.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Antigravity', 'resources', 'bin', 'language_server.exe'),
+    // macOS
     '/Applications/Antigravity.app/Contents/Resources/bin/language_server',
-    path.join(os.homedir(), 'Applications/Antigravity.app/Contents/Resources/bin/language_server')
+    path.join(os.homedir(), 'Applications/Antigravity.app/Contents/Resources/bin/language_server'),
+    // Linux
+    '/usr/lib/antigravity/resources/bin/language_server',
+    '/opt/antigravity/resources/bin/language_server',
+    path.join(os.homedir(), '.local', 'share', 'antigravity', 'resources', 'bin', 'language_server')
   ];
 
   // Try finding from running processes first
   try {
-    const ps = cp.execSync('ps aux | grep -E "language_server --standalone" | grep -v grep', { encoding: 'utf8' });
-    const match = ps.match(/(\/[^\s]+language_server)/);
-    if (match && fs.existsSync(match[1])) {
-      result.desktop = match[1];
+    if (isWin) {
+      const psCmd = 'Get-Process -Name language_server -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path | Select-Object -First 1';
+      const psOut = cp.execSync(`powershell -NoProfile -Command "${psCmd}"`, {
+        timeout: 3000,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'ignore']
+      }).trim();
+      if (psOut && fs.existsSync(psOut)) {
+        result.desktop = psOut;
+      }
+    } else {
+      const ps = cp.execSync('ps aux | grep -E "language_server --standalone" | grep -v grep', {
+        encoding: 'utf8',
+        timeout: 3000,
+        stdio: ['pipe', 'pipe', 'ignore']
+      });
+      const match = ps.match(/(\/[^\s]+language_server)/);
+      if (match && fs.existsSync(match[1])) {
+        result.desktop = match[1];
+      }
     }
   } catch (e) {}
 
@@ -57,17 +133,28 @@ export function resolveTargetBinaries() {
     }
   }
 
-  // 2. agy CLI
+  // 2. agy CLI Candidates
   const cliCandidates = [
+    // Windows
+    path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'agy', 'bin', 'agy.exe'),
+    path.join(os.homedir(), '.gemini', 'antigravity', 'bin', 'agy.exe'),
+    path.join(os.homedir(), '.local', 'bin', 'agy.exe'),
+    // macOS / Linux
     path.join(os.homedir(), '.local', 'bin', 'agy'),
     path.join(os.homedir(), '.gemini', 'antigravity', 'bin', 'agy'),
     '/usr/local/bin/agy'
   ];
 
   try {
-    const whichAgy = cp.execSync('which agy', { encoding: 'utf8' }).trim();
-    if (whichAgy && fs.existsSync(whichAgy)) {
-      result.cli = whichAgy;
+    const whichCmd = isWin ? 'where.exe agy' : 'which agy';
+    const whichAgy = cp.execSync(whichCmd, {
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['pipe', 'pipe', 'ignore']
+    }).trim();
+    const firstLine = whichAgy.split(/\r?\n/)[0].trim();
+    if (firstLine && fs.existsSync(firstLine)) {
+      result.cli = firstLine;
     }
   } catch (e) {}
 
@@ -93,11 +180,23 @@ export async function inspectBinaryUnlock(binaryPath) {
     return { path: binaryPath, exists: false, isUnlocked: false, details: 'Binary not found', hasBackup: false };
   }
 
+  const baseName = path.basename(binaryPath);
+  const backupDir = path.join(os.homedir(), 'Desktop', 'desktop-backups');
   const hasBak = fs.existsSync(`${binaryPath}.bak`) ||
-    fs.existsSync(path.join(os.homedir(), 'Desktop', 'desktop-backups', 'language_server.orig'));
+    fs.existsSync(path.join(backupDir, `${baseName}.orig`)) ||
+    fs.existsSync(path.join(backupDir, 'language_server.orig'));
+
+  const py = resolvePython();
+  const preset = getSavedPreset();
+  const args = [AGY_PATCH_PY, '--binary', binaryPath, '--dry-run'];
+  if (preset.targetLimit) {
+    args.push('--limit', String(preset.targetLimit));
+  } else if (preset.preset === 'dynamic') {
+    args.push('--limit', '0');
+  }
 
   return new Promise((resolve) => {
-    cp.execFile('python3', [AGY_PATCH_PY, '--binary', binaryPath, '--dry-run'], { timeout: 15000 }, (err, stdout, stderr) => {
+    cp.execFile(py, args, { timeout: 15000 }, (err, stdout, stderr) => {
       const output = `${stdout || ''}\n${stderr || ''}`;
       const isAlreadyUnlocked = output.includes('all gates already unlocked; nothing to write') ||
         (output.includes('[=]') && !output.includes('[*]'));
@@ -134,6 +233,29 @@ export async function getOverallUnlockStatus() {
 }
 
 /**
+ * Safely replaces a destination binary file, handling Windows process locking gracefully.
+ * @param {string} srcFile Source file path
+ * @param {string} dstFile Destination file path
+ */
+function safeReplaceBinary(srcFile, dstFile) {
+  if (process.platform === 'win32') {
+    try {
+      fs.copyFileSync(srcFile, dstFile);
+    } catch (err) {
+      const oldFile = `${dstFile}.old.${process.pid}`;
+      try {
+        fs.renameSync(dstFile, oldFile);
+        fs.copyFileSync(srcFile, dstFile);
+      } catch (e2) {
+        throw err;
+      }
+    }
+  } else {
+    fs.renameSync(srcFile, dstFile);
+  }
+}
+
+/**
  * Unlocks the specified binary or all detected binaries
  * @param {'desktop'|'cli'|'all'} [target='all']
  * @returns {Promise<{success: boolean, message: string, output: string}>}
@@ -154,25 +276,35 @@ export async function applyUnlock(target = 'all') {
 
   const results = [];
   let allSuccess = true;
+  const py = resolvePython();
 
   for (const item of targets) {
-    // For desktop language_server, ensure external backup folder exists if needed
+    // For desktop language_server, ensure external backup folder exists
     if (item.isDesktop) {
       try {
         const backupDir = path.join(os.homedir(), 'Desktop', 'desktop-backups');
         if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-        const origBackup = path.join(backupDir, 'language_server.orig');
+        const baseName = path.basename(item.path);
+        const origBackup = path.join(backupDir, `${baseName}.orig`);
         if (!fs.existsSync(origBackup)) {
           fs.copyFileSync(item.path, origBackup);
         }
       } catch (e) {}
     }
 
+    const preset = getSavedPreset();
     const res = await new Promise((resolve) => {
       const args = [AGY_PATCH_PY, '--binary', item.path, '--in-place'];
-      if (item.isDesktop) args.push('--no-backup'); // Avoid placing .bak inside .app bundle
+      if (preset.targetLimit) {
+        args.push('--limit', String(preset.targetLimit));
+      } else if (preset.preset === 'dynamic') {
+        args.push('--limit', '0');
+      } else {
+        args.push('--limit', '512000');
+      }
+      if (item.isDesktop) args.push('--no-backup'); // Keep app directory clean
 
-      cp.execFile('python3', args, { timeout: 30000 }, (err, stdout, stderr) => {
+      cp.execFile(py, args, { timeout: 30000 }, (err, stdout, stderr) => {
         const out = `${stdout || ''}\n${stderr || ''}`.trim();
         if (err && !out.includes('all gates already unlocked')) {
           resolve({ success: false, name: item.name, output: out, error: err.message });
@@ -187,9 +319,13 @@ export async function applyUnlock(target = 'all') {
   }
 
   const outputSummary = results.map(r => `[${r.name}] ${r.success ? '解锁成功' : '失败'}\n${r.output}`).join('\n\n');
+  const restartHint = process.platform === 'darwin'
+    ? '请完全退出并重启 Antigravity 应用（Cmd+Q）以加载新进程。'
+    : '请完全退出并重启 Antigravity 应用（在任务栏/托盘退出后重新打开）以加载新进程。';
+
   return {
     success: allSuccess,
-    message: allSuccess ? '目标上下文已成功解锁！已突破 256K 压缩硬上限。请退出并重启 Antigravity 应用（Cmd+Q）以加载新进程。' : '解锁过程中遇到部分异常，请查看详情。',
+    message: allSuccess ? `目标上下文已成功解锁！已突破 256K 压缩硬上限。${restartHint}` : '解锁过程中遇到部分异常，请查看详情。',
     output: outputSummary
   };
 }
@@ -206,22 +342,32 @@ export async function restoreOriginal(target = 'all') {
 
   try {
     if ((target === 'desktop' || target === 'all') && binaries.desktop) {
-      const origBackup = path.join(os.homedir(), 'Desktop', 'desktop-backups', 'language_server.orig');
-      const bakFile = `${binaries.desktop}.bak`;
-      const source = fs.existsSync(origBackup) ? origBackup : (fs.existsSync(bakFile) ? bakFile : null);
+      const backupDir = path.join(os.homedir(), 'Desktop', 'desktop-backups');
+      const baseName = path.basename(binaries.desktop);
+      const origCandidates = [
+        path.join(backupDir, `${baseName}.orig`),
+        path.join(backupDir, 'language_server.orig'),
+        `${binaries.desktop}.bak`
+      ];
+      const source = origCandidates.find(p => fs.existsSync(p));
+
       if (source) {
         const tmpFile = `${binaries.desktop}.restore.tmp.${process.pid}`;
         fs.copyFileSync(source, tmpFile);
-        fs.chmodSync(tmpFile, 0o755);
-
-        try {
-          cp.execSync(`codesign --force --sign - --options runtime --identifier language_server "${tmpFile}"`);
-        } catch (e) {
-          try { cp.execSync(`codesign --force --sign - "${tmpFile}"`); } catch (e2) {}
+        if (process.platform !== 'win32') {
+          fs.chmodSync(tmpFile, 0o755);
         }
 
-        fs.renameSync(tmpFile, binaries.desktop);
-        messages.push('已从备份恢复官方原版桌面端 language_server (需 Cmd+Q 重启)');
+        if (process.platform === 'darwin') {
+          try {
+            cp.execSync(`codesign --force --sign - --options runtime --identifier language_server "${tmpFile}"`);
+          } catch (e) {
+            try { cp.execSync(`codesign --force --sign - "${tmpFile}"`); } catch (e2) {}
+          }
+        }
+
+        safeReplaceBinary(tmpFile, binaries.desktop);
+        messages.push('已从备份恢复官方原版桌面端 language_server (需重启应用生效)');
         anySuccess = true;
       }
     }
@@ -231,12 +377,16 @@ export async function restoreOriginal(target = 'all') {
       if (fs.existsSync(bak)) {
         const tmpFile = `${binaries.cli}.restore.tmp.${process.pid}`;
         fs.copyFileSync(bak, tmpFile);
-        fs.chmodSync(tmpFile, 0o755);
-        try {
-          cp.execSync(`codesign --force --sign - --options runtime --identifier cli "${tmpFile}"`);
-        } catch (e) {}
-        fs.renameSync(tmpFile, binaries.cli);
-        messages.push('已从备份恢复官方原版 agy CLI');
+        if (process.platform !== 'win32') {
+          fs.chmodSync(tmpFile, 0o755);
+        }
+        if (process.platform === 'darwin') {
+          try {
+            cp.execSync(`codesign --force --sign - --options runtime --identifier cli "${tmpFile}"`);
+          } catch (e) {}
+        }
+        safeReplaceBinary(tmpFile, binaries.cli);
+        messages.push('已从备份恢复官方原版 agy CLI (需重启生效)');
         anySuccess = true;
       }
     }
